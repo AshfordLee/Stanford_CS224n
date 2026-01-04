@@ -7,6 +7,7 @@ Sahil Chopra <schopra8@stanford.edu>
 Haoshen Hong <haoshen@stanford.edu>
 """
 
+from functools import partial
 import sys
 
 class PartialParse(object):
@@ -33,6 +34,9 @@ class PartialParse(object):
         ### Note: If you need to use the sentence object to initialize anything, make sure to not directly 
         ###       reference the sentence object.  That is, remember to NOT modify the sentence object. 
 
+        self.stack=["ROOT"]
+        self.buffer=sentence.copy()
+        self.dependencies=[]
 
         ### END YOUR CODE
 
@@ -52,6 +56,16 @@ class PartialParse(object):
         ###         2. Left Arc
         ###         3. Right Arc
 
+        if transition == "S":
+            self.stack.append(self.buffer.pop(0))
+
+        elif transition == "LA":
+            self.dependencies.append((self.stack[-1], self.stack[-2]))
+            self.stack.pop(-2)
+
+        elif transition == "RA":
+            self.dependencies.append((self.stack[-2], self.stack[-1]))
+            self.stack.pop(-1)
 
         ### END YOUR CODE
 
@@ -104,9 +118,31 @@ def minibatch_parse(sentences, model, batch_size):
     ###             is being accessed by `partial_parses` and may cause your code to crash.
 
 
-    ### END YOUR CODE
+    partial_parses = [PartialParse(s) for s in sentences]
+    pp_to_idx = {id(pp.sentence): idx for idx, pp in enumerate(partial_parses)}
+    unfinished_parses = partial_parses[:]
+    dependencies = [None] * len(sentences)
+
+    while unfinished_parses:
+        minibatch = unfinished_parses[:batch_size]
+        transitions = model.predict(minibatch)
+
+        for pp, trans in zip(minibatch, transitions):
+            pp.parse_step(trans)
+
+        finished = []
+        for pp in minibatch:
+            if pp.buffer == [] and len(pp.stack) == 1:
+                orig_idx = pp_to_idx[id(pp.sentence)]
+                dependencies[orig_idx] = pp.dependencies
+                finished.append(pp)
+
+        for pp in finished:
+            unfinished_parses.remove(pp)
 
     return dependencies
+
+    ### END YOUR CODE
 
 
 def test_step(name, transition, stack, buf, deps,
