@@ -81,6 +81,15 @@ class NMT(nn.Module):
         ###     Dropout Layer:
         ###         https://pytorch.org/docs/stable/generated/torch.nn.Dropout.html
 
+        self.post_embed_cnn = nn.Conv1d(in_channels=embed_size,out_channels=embed_size,kernel_size=2,padding='same')
+        self.encoder = nn.LSTM(input_size=embed_size,hidden_size=hidden_size,bidirectional=True)
+        self.decoder = nn.LSTMCell(input_size=embed_size+hidden_size,hidden_size=hidden_size,bias=True)
+        self.h_projection = nn.Linear(in_features=2*hidden_size,out_features=hidden_size,bias=False)
+        self.c_projection = nn.Linear(in_features=2*hidden_size,out_features=hidden_size,bias=False)
+        self.att_projection = nn.Linear(in_features=2*hidden_size,out_features=hidden_size,bias=False)
+        self.combined_output_projection = nn.Linear(in_features=3*hidden_size,out_features=hidden_size,bias=False)
+        self.target_vocab_projection = nn.Linear(in_features=hidden_size,out_features=len(vocab.tgt),bias=False)
+        self.dropout = nn.Dropout(p=dropout_rate)
 
 
         ### END YOUR CODE
@@ -141,6 +150,7 @@ class NMT(nn.Module):
         """
         enc_hiddens, dec_init_state = None, None
 
+
         ### YOUR CODE HERE (~ 11 Lines)
         ### TODO:
         ###     1. Construct Tensor `X` of source sentences with shape (src_len, b, e) using the source model embeddings.
@@ -177,10 +187,39 @@ class NMT(nn.Module):
         ###         https://pytorch.org/docs/stable/generated/torch.permute.html
 
 
+        X = self.model_embeddings.source(source_padded)
 
 
+        X = torch.permute(X,(1,2,0))
 
 
+        X = self.post_embed_cnn(X)
+
+
+        X = torch.permute(X,(2,0,1))
+
+
+        X = pack_padded_sequence(X,lengths=source_lengths)
+
+
+        enc_hiddens,(last_hidden,last_cell) = self.encoder(X)
+
+
+        enc_hiddens,_ = pad_packed_sequence(enc_hiddens)
+
+
+        enc_hiddens = enc_hiddens.permute(1,0,2)
+
+
+        init_decoder_hidden = self.h_projection(torch.cat((last_hidden[0],last_hidden[1]),dim=1))
+
+        init_decoder_cell = self.c_projection(torch.cat((last_cell[0],last_cell[1]),dim=1))
+
+        # init_decoder_hidden = self.h_projection(torch.cat(last_hidden,1))
+
+        # init_decoder_cell = self.c_projection(torch.cat(last_cell,1))
+
+        dec_init_state = (init_decoder_hidden,init_decoder_cell)
 
         ### END YOUR CODE
 
